@@ -18,8 +18,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Tap this checkout
-        run: brew tap thominho/tap "$GITHUB_WORKSPACE"
+      - name: Tap (and trust) this checkout
+        run: |
+          brew tap thominho/tap "$GITHUB_WORKSPACE"
+          brew trust thominho/tap
       - name: Audit
         run: brew audit --strict --formula thominho/tap/unannoy
       - name: Install

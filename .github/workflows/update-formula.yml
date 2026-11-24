@@ -59,6 +59,7 @@ jobs:
         if: steps.check.outputs.version
         run: |
           brew tap thominho/tap "$GITHUB_WORKSPACE"
+          brew trust thominho/tap
           brew audit --strict --formula thominho/tap/unannoy
           brew install --formula thominho/tap/unannoy
           brew test thominho/tap/unannoy
