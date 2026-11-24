@@ -1,0 +1,77 @@
+name: Update formula
+
+# Keeps Formula/unannoy.rb in sync with the latest unannoy release.
+# No secrets needed: it polls the public release API and commits with the
+# workflow's own GITHUB_TOKEN, but only after audit + install + test pass.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [unannoy-release]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: update-formula
+  cancel-in-progress: false
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_ANALYTICS: 1
+
+jobs:
+  update:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a new unannoy release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api repos/Thominho/unannoy/releases/latest --jq .tag_name)
+          latest=${tag#v}
+          current=$(sed -n 's|^  url ".*/archive/refs/tags/v\(.*\)\.tar\.gz"$|\1|p' Formula/unannoy.rb)
+          echo "latest release: $latest, formula: $current"
+          if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+            echo "Formula is up to date."
+            exit 0
+          fi
+          url="https://github.com/Thominho/unannoy/archive/refs/tags/$tag.tar.gz"
+          sha=$(curl -fsSL "$url" | shasum -a 256 | cut -d' ' -f1)
+          perl -pi -e "s|^  url \".*\"\$|  url \"$url\"|; s|^  sha256 \".*\"\$|  sha256 \"$sha\"|" Formula/unannoy.rb
+          git diff
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Commit locally
+        if: steps.check.outputs.version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "unannoy ${{ steps.check.outputs.version }}"
+
+      - name: Audit, install and test the new formula
+        if: steps.check.outputs.version
+        run: |
+          brew tap thominho/tap "$GITHUB_WORKSPACE"
+          brew audit --strict --formula thominho/tap/unannoy
+          brew install --formula thominho/tap/unannoy
+          brew test thominho/tap/unannoy
+          unannoy --version | grep -F "${{ steps.check.outputs.version }}"
+
+      - name: Publish
+        if: steps.check.outputs.version
+        run: git push
+
+      - name: Keep the schedule alive
+        # GitHub pauses scheduled workflows in repos without commits for 60 days.
+        # Re-enabling the workflow on every run keeps the release check running.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/update-formula.yml/enable" || true

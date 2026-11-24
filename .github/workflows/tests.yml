@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_ANALYTICS: 1
+
+jobs:
+  formula:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tap this checkout
+        run: brew tap thominho/tap "$GITHUB_WORKSPACE"
+      - name: Audit
+        run: brew audit --strict --formula thominho/tap/unannoy
+      - name: Install
+        run: brew install --formula thominho/tap/unannoy
+      - name: Test
+        run: brew test thominho/tap/unannoy
+      - name: Smoke test
+        run: unannoy --version && unannoy doctor
